@@ -24,9 +24,78 @@ var writeDocument = database.writeDocument;
 var addDocument = database.addDocument;
 var readDocument = database.readDocument;
 var StatusUpdateSchema = require('./schemas/statusupdate.json');
+var commentSchema = require('./schemas/comment.json');
 var validate = require('express-jsonschema').validate;
 
+function postComment(feedItemId, author, contents) {
+   var feedItem = readDocument('feedItems', feedItemId);
+   feedItem.comments.push({
+     "author": author,
+     "contents": contents,
+     "postDate": new Date().getTime(),
+     "likeCounter": []
+   });
+   writeDocument('feedItems', feedItem);
+   // Return a resolved version of the feed item.
+   return getFeedItemSync(feedItemId);
+ }
 
+ app.post('/feeditem/:feeditemid/commentThread/comment',validate({ body: commentSchema}),function(req,res){
+   var body = req.body;
+   var fromUser = getUserIdFromToken(req.get('Authorization'));
+   var feedItemId = req.params.feeditemid;
+   if (fromUser === body.author) {
+     var newPost = postComment(feedItemId, body.author, body.contents);
+     res.status(201);
+     res.set('Location', '/feeditem/' + newPost._id);
+     res.send(newPost);
+   }
+   else{
+     res.send(401).end();
+   }
+ });
+
+ app.put('/feeditem/:feeditemid/commentThread/comment/:commentIdx/likelist/:userId',function(req,res){
+   var fromUser = getUserIdFromToken(req.get('Authorization'));
+   var feedItemId = parseInt(req.params.feeditemid,10);
+   var commentIdx = parseInt(req.params.commentIdx,10);
+   var userId = parseInt(req.params.userId,10);
+   if(fromUser === userId){
+     var feedItem = readDocument('feedItems', feedItemId);
+     var comment = feedItem.comments[commentIdx];
+     if(comment.likeCounter.indexOf(userId)===-1){
+       comment.likeCounter.push(userId);
+     }
+     writeDocument('feedItems', feedItem);
+     comment.author = readDocument('users', comment.author);
+     res.status(201);
+     res.send(comment);
+   }else{
+     res.send(401).end();
+   }
+
+ });
+
+ app.delete('/feeditem/:feeditemid/commentThread/comment/:commentIdx/likelist/:userId',function(req,res){
+   var fromUser = getUserIdFromToken(req.get('Authorization'));
+   var feedItemId = parseInt(req.params.feeditemid,10);
+   var commentIdx = parseInt(req.params.commentIdx,10);
+   var userId = parseInt(req.params.userId,10);
+   if(fromUser === userId){
+     var feedItem = readDocument('feedItems', feedItemId);
+     var comment = feedItem.comments[commentIdx];
+     var index = comment.likeCounter.indexOf(userId);
+     if(index!==-1){
+       comment.likeCounter.splice(index,1);
+     }
+     writeDocument('feedItems', feedItem);
+     comment.author = readDocument('users', comment.author);
+     res.status(201);
+     res.send(comment);
+   }else{
+    res.send(401).end();
+   }
+ });
 
 
 
